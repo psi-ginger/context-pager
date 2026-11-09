@@ -29,25 +29,71 @@ type Symbol struct {
 	Signature string `json:"signature"`
 }
 
+// SymbolPattern defines metadata for extracting symbols reliably without guessing capture indices.
+type SymbolPattern struct {
+	Regex     *regexp.Regexp
+	Kind      string // If non-empty, use this fixed kind (e.g. "fn")
+	KindGroup int    // If Kind is empty, capture kind from this group
+	NameGroup int    // Capture symbol name from this group
+}
+
 var (
-	// Regex patterns for multi-language symbol extraction (Heuristic)
-	patterns = []*regexp.Regexp{
-		// Python: def name(...), async def name(...), class Name(...)
-		regexp.MustCompile(`^\s*(?:async\s+)?(def)\s+([a-zA-Z0-9_]+)`),
-		regexp.MustCompile(`^\s*(class)\s+([a-zA-Z0-9_]+)`),
-
-		// Rust: fn name(...), struct Name, enum Name, trait Name
-		regexp.MustCompile(`^\s*(?:pub(?:\([^)]+\))?\s+)?(?:async\s+)?(fn)\s+([a-zA-Z0-9_]+)`),
-		regexp.MustCompile(`^\s*(?:pub(?:\([^)]+\))?\s+)?(struct|enum|trait)\s+([a-zA-Z0-9_]+)`),
-
-		// JS/TS: function name, class name, const name = () =>
-		regexp.MustCompile(`^\s*(?:export\s+)?(?:async\s+)?(function)\s+([a-zA-Z0-9_]+)`),
-		regexp.MustCompile(`^\s*(?:export\s+)?(class|interface)\s+([a-zA-Z0-9_]+)`),
-		regexp.MustCompile(`^\s*(?:export\s+)?(?:const|let)\s+([a-zA-Z0-9_]+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>`),
-
-		// C/C++: class Name, struct Name, type funcName(...)
-		regexp.MustCompile(`^\s*(class|struct)\s+([a-zA-Z0-9_]+)\s*(?:;|:[^{]*)?\{?`),
-		regexp.MustCompile(`^\s*(?:[a-zA-Z_][a-zA-Z0-9_]*[\s*&]+)+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^;]*\)\s*(?:const)?\s*\{`),
+	// Regex patterns with explicit metadata for multi-language symbol extraction
+	patterns = []SymbolPattern{
+		// Python: def name(...), async def name(...)
+		{
+			Regex:     regexp.MustCompile(`^\s*(?:async\s+)?(def)\s+([a-zA-Z0-9_]+)`),
+			Kind:      "fn",
+			NameGroup: 2,
+		},
+		// Python: class Name(...)
+		{
+			Regex:     regexp.MustCompile(`^\s*(class)\s+([a-zA-Z0-9_]+)`),
+			KindGroup: 1,
+			NameGroup: 2,
+		},
+		// Rust: fn name(...), pub fn name(...)
+		{
+			Regex:     regexp.MustCompile(`^\s*(?:pub(?:\([^)]+\))?\s+)?(?:async\s+)?(fn)\s+([a-zA-Z0-9_]+)`),
+			Kind:      "fn",
+			NameGroup: 2,
+		},
+		// Rust: struct Name, enum Name, trait Name
+		{
+			Regex:     regexp.MustCompile(`^\s*(?:pub(?:\([^)]+\))?\s+)?(struct|enum|trait)\s+([a-zA-Z0-9_]+)`),
+			KindGroup: 1,
+			NameGroup: 2,
+		},
+		// JS/TS: function name(...)
+		{
+			Regex:     regexp.MustCompile(`^\s*(?:export\s+)?(?:async\s+)?(function)\s+([a-zA-Z0-9_]+)`),
+			Kind:      "fn",
+			NameGroup: 2,
+		},
+		// JS/TS: class Name, interface Name
+		{
+			Regex:     regexp.MustCompile(`^\s*(?:export\s+)?(class|interface)\s+([a-zA-Z0-9_]+)`),
+			KindGroup: 1,
+			NameGroup: 2,
+		},
+		// JS/TS: const name = () =>
+		{
+			Regex:     regexp.MustCompile(`^\s*(?:export\s+)?(?:const|let)\s+([a-zA-Z0-9_]+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>`),
+			Kind:      "fn",
+			NameGroup: 1,
+		},
+		// C/C++: class Name, struct Name
+		{
+			Regex:     regexp.MustCompile(`^\s*(class|struct)\s+([a-zA-Z0-9_]+)\s*(?:;|:[^{]*)?\{?`),
+			KindGroup: 1,
+			NameGroup: 2,
+		},
+		// C/C++: returnType funcName(...)
+		{
+			Regex:     regexp.MustCompile(`^\s*(?:[a-zA-Z_][a-zA-Z0-9_]*[\s*&]+)+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^;]*\)\s*(?:const)?\s*\{`),
+			Kind:      "fn",
+			NameGroup: 1,
+		},
 	}
 
 	excludeDirs = map[string]bool{
@@ -219,13 +265,15 @@ func parseGenericSymbols(path string) ([]Symbol, error) {
 		lineNum := i + 1
 
 		for _, p := range patterns {
-			m := p.FindStringSubmatch(line)
-			if len(m) > 1 {
-				kind := "fn"
-				name := m[1]
-				if len(m) > 2 {
-					kind = m[1]
-					name = m[2]
+			m := p.Regex.FindStringSubmatch(line)
+			if len(m) > p.NameGroup {
+				name := m[p.NameGroup]
+				kind := p.Kind
+				if kind == "" && p.KindGroup > 0 && len(m) > p.KindGroup {
+					kind = m[p.KindGroup]
+				}
+				if kind == "" {
+					kind = "fn"
 				}
 
 				endLine := lineNum
@@ -294,12 +342,18 @@ func indexTarget(targetPath string) (*IndexReport, error) {
 		return nil, err
 	}
 
+	report := &IndexReport{
+		Symbols:  []Symbol{},
+		Warnings: []string{},
+	}
+
 	var files []string
 	if !fi.IsDir() {
 		files = append(files, targetPath)
 	} else {
 		err := filepath.Walk(targetPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
+				report.Warnings = append(report.Warnings, fmt.Sprintf("%s (walk error: %v)", filepath.ToSlash(path), err))
 				return nil
 			}
 			if info.IsDir() {
@@ -315,15 +369,11 @@ func indexTarget(targetPath string) (*IndexReport, error) {
 			return nil
 		})
 		if err != nil {
-			return nil, err
+			report.Warnings = append(report.Warnings, fmt.Sprintf("%s (walk init error: %v)", filepath.ToSlash(targetPath), err))
 		}
 	}
 
-	report := &IndexReport{
-		TotalFiles: len(files),
-		Symbols:    []Symbol{},
-		Warnings:   []string{},
-	}
+	report.TotalFiles = len(files)
 
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f))
@@ -552,6 +602,9 @@ func handleTrace(args []string) {
 				}
 			}
 			if err != nil {
+				if err != io.EOF {
+					skippedFiles = append(skippedFiles, fmt.Sprintf("%s (read error: %v)", filepath.ToSlash(path), err))
+				}
 				break
 			}
 		}

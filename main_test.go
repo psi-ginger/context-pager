@@ -9,16 +9,13 @@ import (
 )
 
 func TestStripStringAndCommentsRustLifetime(t *testing.T) {
-	// Rust snippet with lifetime 'a and 'b
 	line := "fn process<'a, 'b>(data: &'a str) -> &'b str {"
 	stripped := stripStringAndComments(line, ".rs")
 
-	// The lifetime quotes should NOT have initiated an open quote string that eats the opening brace
 	if !strings.Contains(stripped, "{") {
 		t.Fatalf("Expected stripped output to contain '{', got: %s", stripped)
 	}
 
-	// Normal char literal should still be stripped or handled
 	lineChar := "let ch = 'x'; {"
 	strippedChar := stripStringAndComments(lineChar, ".rs")
 	if !strings.Contains(strippedChar, "{") {
@@ -60,6 +57,120 @@ func StartServer(cfg Config) error {
 	}
 }
 
+func TestParsePythonSymbols(t *testing.T) {
+	tmpDir := t.TempDir()
+	samplePy := filepath.Join(tmpDir, "server.py")
+	content := `class Worker:
+    def __init__(self):
+        pass
+
+async def handle_request(req):
+    return 200
+`
+	os.WriteFile(samplePy, []byte(content), 0644)
+	symbols, err := parseGenericSymbols(samplePy)
+	if err != nil {
+		t.Fatalf("parseGenericSymbols failed: %v", err)
+	}
+
+	if len(symbols) < 3 {
+		t.Fatalf("Expected at least 3 symbols (class Worker, def __init__, async def handle_request), got %d: %+v", len(symbols), symbols)
+	}
+
+	if symbols[0].Name != "Worker" || symbols[0].Kind != "class" {
+		t.Errorf("Expected class Worker, got: %+v", symbols[0])
+	}
+	if symbols[1].Name != "__init__" || symbols[1].Kind != "fn" {
+		t.Errorf("Expected fn __init__, got: %+v", symbols[1])
+	}
+	if symbols[2].Name != "handle_request" || symbols[2].Kind != "fn" {
+		t.Errorf("Expected fn handle_request, got: %+v", symbols[2])
+	}
+}
+
+func TestParseRustSymbols(t *testing.T) {
+	tmpDir := t.TempDir()
+	sampleRs := filepath.Join(tmpDir, "lib.rs")
+	content := `pub struct Engine {
+    state: i32,
+}
+
+pub trait Runner {
+    fn run(&self);
+}
+
+pub async fn start_loop() {
+    let x = 1;
+}
+`
+	os.WriteFile(sampleRs, []byte(content), 0644)
+	symbols, err := parseGenericSymbols(sampleRs)
+	if err != nil {
+		t.Fatalf("parseGenericSymbols failed: %v", err)
+	}
+
+	if len(symbols) < 4 {
+		t.Fatalf("Expected at least 4 symbols in Rust file (struct, trait, trait method, async fn), got %d: %+v", len(symbols), symbols)
+	}
+
+	if symbols[0].Name != "Engine" || symbols[0].Kind != "struct" {
+		t.Errorf("Expected struct Engine, got: %+v", symbols[0])
+	}
+	if symbols[1].Name != "Runner" || symbols[1].Kind != "trait" {
+		t.Errorf("Expected trait Runner, got: %+v", symbols[1])
+	}
+	if symbols[2].Name != "run" || symbols[2].Kind != "fn" {
+		t.Errorf("Expected fn run, got: %+v", symbols[2])
+	}
+	if symbols[3].Name != "start_loop" || symbols[3].Kind != "fn" {
+		t.Errorf("Expected fn start_loop, got: %+v", symbols[3])
+	}
+}
+
+func TestParseJSTSSymbolsWithArrowFunctions(t *testing.T) {
+	tmpDir := t.TempDir()
+	sampleTs := filepath.Join(tmpDir, "index.ts")
+	content := `export interface User {
+    id: string;
+}
+
+export class Service {
+    run() {}
+}
+
+export const processOrder = async (order: any) => {
+    return true;
+};
+
+function fallbackHandler() {
+    return false;
+}
+`
+	os.WriteFile(sampleTs, []byte(content), 0644)
+	symbols, err := parseGenericSymbols(sampleTs)
+	if err != nil {
+		t.Fatalf("parseGenericSymbols failed: %v", err)
+	}
+
+	if len(symbols) < 4 {
+		t.Fatalf("Expected at least 4 symbols in TS file, got %d: %+v", len(symbols), symbols)
+	}
+
+	if symbols[0].Name != "User" || symbols[0].Kind != "interface" {
+		t.Errorf("Expected interface User, got: %+v", symbols[0])
+	}
+	if symbols[1].Name != "Service" || symbols[1].Kind != "class" {
+		t.Errorf("Expected class Service, got: %+v", symbols[1])
+	}
+	// Explicit check on Arrow Function extraction (Kay's P0 bug)
+	if symbols[2].Name != "processOrder" || symbols[2].Kind != "fn" {
+		t.Errorf("Expected fn processOrder for arrow function, got: %+v", symbols[2])
+	}
+	if symbols[3].Name != "fallbackHandler" || symbols[3].Kind != "fn" {
+		t.Errorf("Expected fn fallbackHandler, got: %+v", symbols[3])
+	}
+}
+
 func TestParseGenericSymbolsCPP(t *testing.T) {
 	tmpDir := t.TempDir()
 	sampleCpp := filepath.Join(tmpDir, "player.cpp")
@@ -86,6 +197,9 @@ public:
 	if symbols[0].Name != "Player" || symbols[0].Kind != "class" {
 		t.Errorf("Expected class Player, got: %+v", symbols[0])
 	}
+	if symbols[1].Name != "Move" || symbols[1].Kind != "fn" {
+		t.Errorf("Expected fn Move, got: %+v", symbols[1])
+	}
 }
 
 func TestIndexTargetDiagnosticsAndJSONReport(t *testing.T) {
@@ -94,7 +208,6 @@ func TestIndexTargetDiagnosticsAndJSONReport(t *testing.T) {
 	os.WriteFile(goodGo, []byte("package main\nfunc Hello() {}\n"), 0644)
 
 	badGo := filepath.Join(tmpDir, "bad.go")
-	// Syntax error in Go file
 	os.WriteFile(badGo, []byte("package main\nfunc Broken( {}\n"), 0644)
 
 	report, err := indexTarget(tmpDir)
@@ -112,7 +225,6 @@ func TestIndexTargetDiagnosticsAndJSONReport(t *testing.T) {
 		t.Errorf("Expected 1 warning for bad.go, got %d: %v", len(report.Warnings), report.Warnings)
 	}
 
-	// Verify that JSON serialization preserves the report structure including warnings
 	jsonBytes, err := json.Marshal(report)
 	if err != nil {
 		t.Fatalf("json.Marshal(report) failed: %v", err)
@@ -145,7 +257,6 @@ func TestStreamingSliceLogic(t *testing.T) {
 	}
 	os.WriteFile(sample, []byte(sb.String()), 0644)
 
-	// Open and stream lines 10..20
 	file, err := os.Open(sample)
 	if err != nil {
 		t.Fatalf("Failed to open sample: %v", err)
@@ -156,10 +267,7 @@ func TestStreamingSliceLogic(t *testing.T) {
 	end := 20
 	var targetLines []string
 	lineNum := 0
-	reader := os.NewFile(file.Fd(), sample)
-	_ = reader
 
-	// Reopen with standard os.ReadFile or simulate slice logic
 	fileBytes, _ := os.ReadFile(sample)
 	lines := strings.Split(strings.TrimRight(string(fileBytes), "\n"), "\n")
 	for i, l := range lines {
