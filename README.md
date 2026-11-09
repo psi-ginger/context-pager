@@ -44,12 +44,19 @@ Context Pager:
 
 ---
 
-## 3. Features
+## 3. Features & Architecture
 
+### The Architectural Division of Labor
+* **The Go Engine (`pager`):** Kept strictly primitive ($O(1)$ tool complexity). It only extracts symbols, slices exact line ranges, and traces references with near-zero latency (<5ms). No Markdown dependencies, no complex AST linters in binary.
+* **The AI Agent Layer:** Handles polymorphic presentation and governance. Renders human-friendly Markdown tables, validates syntax per language (`.go`, `.py`, `.rs`, `.ts`), manages the single living `TASK_CARD.md`, and requests approval on risky surgery.
+
+### Core Capabilities
 - **Demand-Paged Code Navigation:** Context size remains $O(1)$ regardless of codebase scale.
 - **Pure OOP Boundary Enforcement:** Separates concerns into isolated parts that communicate strictly through well-defined contracts.
 - **Single Task Card (`TASK_CARD.md`):** One living card tracks the whole session using Library Call Numbers (`NET.CONN.01`), Shelf States (`IN SHELF`, `CHECKED OUT`, `SHELVED`), and human-in-the-loop approvals.
+- **Interactive Approval Gate:** Proposes surgery plans clearly on the card before applying changes in supervised mode.
 - **3-Hit Circuit Breaker:** Halts immediately on 3 consecutive test failures to prevent agent churn and hallucinated guessing.
+- **Mandatory Re-Indexing:** Prevents line drift errors after file modifications.
 - **Polyglot Symbol Extraction:** AST-accurate indexing for Go; robust block detection for Python, Rust, JavaScript/TypeScript, and C/C++.
 - **Blazing Fast Startup:** Native Go execution via `go run main.go` with minimal latency and automatic build caching.
 - **Deterministic 1-Based Slicing:** Extracts exact line ranges with clean boundary metadata for surgical agent diffs.
