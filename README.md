@@ -46,7 +46,10 @@ Context Pager:
 
 ## 3. Features
 
-- **Zero External Dependencies:** Built entirely with the Go Standard Library (`go/parser`, `go/ast`, `regexp`, `bufio`). No Docker, no vector databases, no heavy LangChain bindings.
+- **Demand-Paged Code Navigation:** Context size remains $O(1)$ regardless of codebase scale.
+- **Pure OOP Boundary Enforcement:** Separates concerns into isolated parts that communicate strictly through well-defined contracts.
+- **Single Task Card (`TASK_CARD.md`):** One living card tracks the whole session using Library Call Numbers (`NET.CONN.01`), Shelf States (`IN SHELF`, `CHECKED OUT`, `SHELVED`), and human-in-the-loop approvals.
+- **3-Hit Circuit Breaker:** Halts immediately on 3 consecutive test failures to prevent agent churn and hallucinated guessing.
 - **Polyglot Symbol Extraction:** AST-accurate indexing for Go; robust block detection for Python, Rust, JavaScript/TypeScript, and C/C++.
 - **Blazing Fast Startup:** Native Go execution via `go run main.go` with minimal latency and automatic build caching.
 - **Deterministic 1-Based Slicing:** Extracts exact line ranges with clean boundary metadata for surgical agent diffs.
