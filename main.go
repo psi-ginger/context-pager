@@ -37,6 +37,13 @@ type SymbolPattern struct {
 	NameGroup int    // Capture symbol name from this group
 }
 
+// TraceMatch represents a single symbol reference occurrence found in source code.
+type TraceMatch struct {
+	File string `json:"file"`
+	Line int    `json:"line"`
+	Text string `json:"text"`
+}
+
 var (
 	// Regex patterns with explicit metadata for multi-language symbol extraction
 	patterns = []SymbolPattern{
@@ -530,6 +537,41 @@ func handleSlice(args []string) {
 	fmt.Printf("--- [END SLICE] (%d lines) ---\n", len(targetLines))
 }
 
+// traceFile searches a single file for symbol references with strict file descriptor lifecycle.
+func traceFile(path string, re *regexp.Regexp, cwd string) ([]TraceMatch, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var matches []TraceMatch
+	lineNum := 0
+	reader := bufio.NewReader(file)
+	for {
+		line, err := reader.ReadString('\n')
+		if len(line) > 0 {
+			lineNum++
+			lineClean := strings.TrimRight(line, "\r\n")
+			if re.MatchString(lineClean) {
+				rel, _ := filepath.Rel(cwd, path)
+				matches = append(matches, TraceMatch{
+					File: filepath.ToSlash(rel),
+					Line: lineNum,
+					Text: strings.TrimSpace(lineClean),
+				})
+			}
+		}
+		if err != nil {
+			if err != io.EOF {
+				return matches, err
+			}
+			break
+		}
+	}
+	return matches, nil
+}
+
 func handleTrace(args []string) {
 	fs := flag.NewFlagSet("trace", flag.ExitOnError)
 	limit := fs.Int("limit", 30, "Max trace matches to display")
@@ -553,12 +595,7 @@ func handleTrace(args []string) {
 	}
 
 	cwd, _ := os.Getwd()
-	type match struct {
-		file string
-		line int
-		text string
-	}
-	var matches []match
+	var matches []TraceMatch
 	var skippedFiles []string
 
 	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -578,35 +615,13 @@ func handleTrace(args []string) {
 			return nil
 		}
 
-		file, err := os.Open(path)
-		if err != nil {
-			skippedFiles = append(skippedFiles, fmt.Sprintf("%s (open error: %v)", filepath.ToSlash(path), err))
-			return nil
+		// Isolated call to traceFile ensures file descriptor is closed immediately per file
+		fileMatches, traceErr := traceFile(path, re, cwd)
+		if traceErr != nil {
+			skippedFiles = append(skippedFiles, fmt.Sprintf("%s (read error: %v)", filepath.ToSlash(path), traceErr))
 		}
-		defer file.Close()
-
-		lineNum := 0
-		reader := bufio.NewReader(file)
-		for {
-			line, err := reader.ReadString('\n')
-			if len(line) > 0 {
-				lineNum++
-				lineClean := strings.TrimRight(line, "\r\n")
-				if re.MatchString(lineClean) {
-					rel, _ := filepath.Rel(cwd, path)
-					matches = append(matches, match{
-						file: filepath.ToSlash(rel),
-						line: lineNum,
-						text: strings.TrimSpace(lineClean),
-					})
-				}
-			}
-			if err != nil {
-				if err != io.EOF {
-					skippedFiles = append(skippedFiles, fmt.Sprintf("%s (read error: %v)", filepath.ToSlash(path), err))
-				}
-				break
-			}
+		if len(fileMatches) > 0 {
+			matches = append(matches, fileMatches...)
 		}
 		return nil
 	})
@@ -617,7 +632,7 @@ func handleTrace(args []string) {
 		count = *limit
 	}
 	for i := 0; i < count; i++ {
-		fmt.Printf("%s:%d -> %s\n", matches[i].file, matches[i].line, matches[i].text)
+		fmt.Printf("%s:%d -> %s\n", matches[i].File, matches[i].Line, matches[i].Text)
 	}
 	if len(matches) > *limit {
 		fmt.Printf("... and %d more matches truncated.\n", len(matches)-*limit)

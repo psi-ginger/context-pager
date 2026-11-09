@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -162,7 +163,6 @@ function fallbackHandler() {
 	if symbols[1].Name != "Service" || symbols[1].Kind != "class" {
 		t.Errorf("Expected class Service, got: %+v", symbols[1])
 	}
-	// Explicit check on Arrow Function extraction (Kay's P0 bug)
 	if symbols[2].Name != "processOrder" || symbols[2].Kind != "fn" {
 		t.Errorf("Expected fn processOrder for arrow function, got: %+v", symbols[2])
 	}
@@ -283,5 +283,41 @@ func TestStreamingSliceLogic(t *testing.T) {
 	}
 	if lineNum != 100 {
 		t.Fatalf("Expected total 100 lines, got %d", lineNum)
+	}
+}
+
+func TestTraceFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	sampleFile := filepath.Join(tmpDir, "trace_sample.go")
+	content := `package main
+
+import "fmt"
+
+func Worker() {
+	ExecuteJob()
+}
+
+func Other() {
+	// ExecuteJob commented out
+	fmt.Println("done")
+}
+`
+	os.WriteFile(sampleFile, []byte(content), 0644)
+
+	re := regexp.MustCompile(`\bExecuteJob\b`)
+	matches, err := traceFile(sampleFile, re, tmpDir)
+	if err != nil {
+		t.Fatalf("traceFile failed: %v", err)
+	}
+
+	if len(matches) != 2 {
+		t.Fatalf("Expected 2 matches for ExecuteJob, got %d: %+v", len(matches), matches)
+	}
+
+	if matches[0].Line != 6 {
+		t.Errorf("Expected match at line 6, got: %d", matches[0].Line)
+	}
+	if matches[1].Line != 10 {
+		t.Errorf("Expected match at line 10, got: %d", matches[1].Line)
 	}
 }
