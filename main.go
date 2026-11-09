@@ -458,6 +458,46 @@ func handleIndex(args []string) {
 	}
 }
 
+// readSlice streams lines from r and returns only the requested range [start..end],
+// along with the total line count, maintaining O(K) memory where K = end-start+1.
+func readSlice(r io.Reader, start, end int) ([]string, int, error) {
+	if start < 1 {
+		return nil, 0, fmt.Errorf("start line must be >= 1 (got %d)", start)
+	}
+	if start > end {
+		return nil, 0, fmt.Errorf("start line (%d) cannot be greater than end line (%d)", start, end)
+	}
+
+	var targetLines []string
+	lineNum := 0
+	reader := bufio.NewReader(r)
+	for {
+		line, err := reader.ReadString('\n')
+		if len(line) > 0 {
+			lineNum++
+			if lineNum >= start && lineNum <= end {
+				targetLines = append(targetLines, strings.TrimRight(line, "\r\n"))
+			}
+		}
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, lineNum, err
+		}
+	}
+
+	total := lineNum
+	if total == 0 {
+		return nil, 0, fmt.Errorf("file is empty")
+	}
+	if start > total {
+		return nil, total, fmt.Errorf("start line (%d) exceeds total lines in file (%d)", start, total)
+	}
+
+	return targetLines, total, nil
+}
+
 func handleSlice(args []string) {
 	if len(args) < 3 {
 		fmt.Fprintf(os.Stderr, "Usage: pager slice <path> <start_line> <end_line>\n")
@@ -472,15 +512,6 @@ func handleSlice(args []string) {
 		os.Exit(1)
 	}
 
-	if start < 1 {
-		fmt.Fprintf(os.Stderr, "Error: start line must be >= 1 (got %d)\n", start)
-		os.Exit(1)
-	}
-	if start > end {
-		fmt.Fprintf(os.Stderr, "Error: start line (%d) cannot be greater than end line (%d)\n", start, end)
-		os.Exit(1)
-	}
-
 	file, err := os.Open(target)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: cannot open file %s: %v\n", target, err)
@@ -488,50 +519,24 @@ func handleSlice(args []string) {
 	}
 	defer file.Close()
 
-	// Streaming Slice: only accumulate target lines in memory (O(K) memory, where K = end-start+1)
-	var targetLines []string
-	lineNum := 0
-	reader := bufio.NewReader(file)
-	for {
-		line, err := reader.ReadString('\n')
-		if len(line) > 0 {
-			lineNum++
-			if lineNum >= start && lineNum <= end {
-				targetLines = append(targetLines, strings.TrimRight(line, "\r\n"))
-			}
-		}
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", target, err)
-			os.Exit(1)
-		}
+	targetLines, total, err := readSlice(file, start, end)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 
-	total := lineNum
-	if total == 0 {
-		fmt.Fprintf(os.Stderr, "Error: file %s is empty\n", target)
-		os.Exit(1)
-	}
-	if start > total {
-		fmt.Fprintf(os.Stderr, "Error: start line (%d) exceeds total lines in file (%d)\n", start, total)
-		os.Exit(1)
-	}
-	if end > total {
-		end = total
+	displayEnd := end
+	if displayEnd > total {
+		displayEnd = total
 	}
 
 	cwd, _ := os.Getwd()
 	rel, _ := filepath.Rel(cwd, target)
 	rel = filepath.ToSlash(rel)
 
-	fmt.Printf("--- [SLICE] %s (Lines %d..%d of %d) ---\n", rel, start, end, total)
+	fmt.Printf("--- [SLICE] %s (Lines %d..%d of %d) ---\n", rel, start, displayEnd, total)
 	for idx, l := range targetLines {
 		currLine := start + idx
-		if currLine > end {
-			break
-		}
 		fmt.Printf("%4d | %s\n", currLine, l)
 	}
 	fmt.Printf("--- [END SLICE] (%d lines) ---\n", len(targetLines))

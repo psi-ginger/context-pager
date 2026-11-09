@@ -245,44 +245,51 @@ func TestIndexTargetDiagnosticsAndJSONReport(t *testing.T) {
 	}
 }
 
-func TestStreamingSliceLogic(t *testing.T) {
-	tmpDir := t.TempDir()
-	sample := filepath.Join(tmpDir, "numbers.txt")
-
+func TestReadSliceRealImplementation(t *testing.T) {
+	// 1. Test standard slicing directly through the real readSlice function
 	var sb strings.Builder
 	for i := 1; i <= 100; i++ {
-		sb.WriteString("Line ")
-		sb.WriteString(string(rune('0' + (i % 10))))
-		sb.WriteString("\n")
+		sb.WriteString("Line " + string(rune('0'+(i/10))) + string(rune('0'+(i%10))) + "\n")
 	}
-	os.WriteFile(sample, []byte(sb.String()), 0644)
 
-	file, err := os.Open(sample)
+	content := sb.String()
+	lines, total, err := readSlice(strings.NewReader(content), 10, 20)
 	if err != nil {
-		t.Fatalf("Failed to open sample: %v", err)
-	}
-	defer file.Close()
-
-	start := 10
-	end := 20
-	var targetLines []string
-	lineNum := 0
-
-	fileBytes, _ := os.ReadFile(sample)
-	lines := strings.Split(strings.TrimRight(string(fileBytes), "\n"), "\n")
-	for i, l := range lines {
-		num := i + 1
-		lineNum = num
-		if num >= start && num <= end {
-			targetLines = append(targetLines, l)
-		}
+		t.Fatalf("readSlice failed: %v", err)
 	}
 
-	if len(targetLines) != 11 {
-		t.Fatalf("Expected 11 lines (10..20), got %d", len(targetLines))
+	if total != 100 {
+		t.Errorf("Expected total 100 lines, got %d", total)
 	}
-	if lineNum != 100 {
-		t.Fatalf("Expected total 100 lines, got %d", lineNum)
+	if len(lines) != 11 {
+		t.Fatalf("Expected 11 sliced lines (10..20), got %d", len(lines))
+	}
+	if lines[0] != "Line 10" {
+		t.Errorf("Expected first line to be 'Line 10', got: %s", lines[0])
+	}
+	if lines[10] != "Line 20" {
+		t.Errorf("Expected last line to be 'Line 20', got: %s", lines[10])
+	}
+
+	// 2. Test boundary validation errors directly on readSlice
+	_, _, err = readSlice(strings.NewReader(content), 0, 10)
+	if err == nil || !strings.Contains(err.Error(), "start line must be >= 1") {
+		t.Errorf("Expected start < 1 error, got: %v", err)
+	}
+
+	_, _, err = readSlice(strings.NewReader(content), 25, 20)
+	if err == nil || !strings.Contains(err.Error(), "cannot be greater than end line") {
+		t.Errorf("Expected start > end error, got: %v", err)
+	}
+
+	_, _, err = readSlice(strings.NewReader(content), 150, 200)
+	if err == nil || !strings.Contains(err.Error(), "exceeds total lines in file") {
+		t.Errorf("Expected start > total error, got: %v", err)
+	}
+
+	_, _, err = readSlice(strings.NewReader(""), 1, 5)
+	if err == nil || !strings.Contains(err.Error(), "file is empty") {
+		t.Errorf("Expected empty file error, got: %v", err)
 	}
 }
 
