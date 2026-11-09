@@ -168,12 +168,12 @@ Context Pager is designed to orchestrate alongside clean engineering disciplines
 
 Context Pager does not operate in isolation; it forms the perceptual foundation for a unified systems-first engineering stack:
 
-| Skill | Role in Stack | Core Philosophy |
-| :--- | :--- | :--- |
-| **[context-pager](.)** | **Perception / Paging** | *The best context is the context never read.* Demand-paged AST slicing over brute-force token stuffing. |
-| **[engineering-rules](https://github.com/vtno/skills/tree/main/skills/engineering-rules)** | **Structure & Invariants** | Innermost layers first, caller-defined interfaces, hand-written fakes, zero wall-clock flakiness. |
-| **[ponytail](https://github.com/vtno/skills/tree/main/skills/ponytail)** | **Diff Minimization** | *The best code is the code never written.* YAGNI at senior-dev precision with the shortest working diff. |
-| **[debug-mantra](https://github.com/vtno/skills/tree/main/skills/debug-mantra)** | **Fail-Path Tracing** | 4-step discipline: reliable reproduction, fail-path tracing via call pointers, hypothesis falsification, and breadcrumb cross-referencing. |
+| Skill | Role in Stack | Author / Source | Core Philosophy |
+| :--- | :--- | :--- | :--- |
+| **[context-pager](.)** | **Perception / Paging** | [PsiGinger & Aun](https://github.com/psi-ginger/context-pager) | *The best context is the context never read.* Demand-paged AST slicing over brute-force token stuffing. |
+| **[engineering-rules](https://github.com/vtno/skills/tree/main/skills/engineering-rules)** | **Structure & Invariants** | [@vtno](https://github.com/vtno/skills) | Innermost layers first, caller-defined interfaces, hand-written fakes, zero wall-clock flakiness. |
+| **[ponytail](https://github.com/DietrichGebert/ponytail)** | **Diff Minimization** | [@DietrichGebert](https://github.com/DietrichGebert/ponytail) | *The best code is the code never written.* YAGNI at senior-dev precision with the shortest working diff. |
+| **[debug-mantra](https://github.com/thananon/9arm-skills/tree/main/skills/engineering/debug-mantra)** | **Fail-Path Tracing** | [@thananon (9arm)](https://github.com/thananon/9arm-skills) | 4-step discipline: reliable reproduction, fail-path tracing via call pointers, hypothesis falsification, and breadcrumb cross-referencing. |
 
 ---
 
