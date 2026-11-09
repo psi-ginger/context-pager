@@ -47,21 +47,22 @@ Context Pager:
 ## 3. Features & Architecture
 
 ### The Architectural Division of Labor
-* **The Go Engine (`pager`):** Kept strictly primitive and zero-bloat. Bounded context delivery to the LLM ($O(1)$ agent context), fast linear repository indexing ($O(N)$), line slicing, and symbol reference searching. No Markdown dependencies, no heavy AST compiler stacks in binary.
+* **The Go Engine (`pager`):** Kept strictly primitive and zero-bloat. Bounded context delivery to the LLM ($O(1)$ agent context), streaming line slice execution ($O(K)$ RAM where $K$ is lines paged), fast linear repository indexing ($O(N)$), and fast reference searching. No Markdown dependencies, no heavy AST compiler stacks in binary.
 * **The AI Agent Layer:** Handles polymorphic presentation and governance. Renders human-friendly Markdown tables, validates syntax per language (`.go`, `.py`, `.rs`, `.ts`, `.c`), manages the single living `TASK_CARD.md`, and requests approval on risky surgery.
 
 ### Core Capabilities
 - **Bounded Working Context:** Context size delivered to LLM remains constant ($O(1)$ working memory) regardless of repository scale ($O(N)$ linear disk scan).
+- **Streaming Slicing ($O(K)$ RAM):** Reads lines on the fly without buffering entire files in memory; memory usage is proportional only to the sliced range ($K$ lines).
 - **Pure OOP Boundary Enforcement:** Separates concerns into isolated parts that communicate strictly through well-defined contracts.
 - **Single Task Card (`TASK_CARD.md`):** One living card tracks the whole session using Library Call Numbers (`NET.CONN.01`), Shelf States (`IN SHELF`, `CHECKED OUT`, `SHELVED`), and human-in-the-loop approvals.
-- **"No Magic" Variable Provenance Policy:** Tri-state verification (`VERIFIED`, `INFERRED`, `UNKNOWN`) for dynamic/untyped languages (Python, PHP, Lua, C). Bounded backward tracing (Depth $\le$ 2) to immediate caller or test fixtures. Zero guessing of DB columns or API payloads: *"Unknown is better than assumed (ไม่รู้ก็ถาม)."*
+- **"No Magic" Variable Provenance Policy:** Tri-state verification (`VERIFIED (SCHEMA)`, `VERIFIED (TEST FIXTURE)`, `INFERRED`, `UNKNOWN`) for dynamic/untyped languages (Python, PHP, Lua, C). Bounded backward tracing (Depth $\le$ 2) to immediate caller or test fixtures. Zero guessing of DB columns or API payloads: *"Unknown is better than assumed (ไม่รู้ก็ถาม)."*
 - **Interactive Approval Gate:** Proposes surgery plans clearly on the card before applying changes in supervised mode.
-- **3-Hit Circuit Breaker:** Stop after 3 consecutive failed verification attempts. Halts immediately to prevent agent churn and hallucinated guessing.
+- **3-Hit Circuit Breaker:** Stop after 3 consecutive failed verification attempts. Never perform a fourth automated fix without human approval.
 - **Mandatory Re-Indexing:** Prevents line drift errors after file modifications.
 - **Polyglot Symbol Extraction:** AST-accurate indexing for Go via standard library `go/parser`; lightweight zero-dependency heuristic block detection for Python, Rust, JavaScript/TypeScript, and C/C++.
 - **Blazing Fast Startup:** Native Go execution via `go run main.go` with minimal latency and automatic build caching.
 - **Deterministic 1-Based Slicing:** Extracts exact line ranges without 64KB token limits, with clean boundary metadata for surgical agent diffs.
-- **Fast Reference Search:** High-speed symbol reference discovery without loading full files. Agents verify call sites via `slice`.
+- **Fast Reference Search:** High-speed symbol reference discovery with `COMPLETE` and `PARTIAL` status reporting. Agents verify call sites via `slice`.
 - **Agent Skill Ready:** Drop-in compatibility with Antigravity, Claude Code, Cursor, and OpenCode workflows via `SKILL.md`.
 
 ---
@@ -89,8 +90,32 @@ struct   PlayerSession                L10-L40 (31L) type PlayerSession struct
 Index Summary: 2 symbols mapped across 2/2 files
 ```
 
+Machine-readable JSON mode for automated agent parsing (includes diagnostics):
+```bash
+go run main.go index --json src/
+```
+
+```json
+{
+  "totalFiles": 12,
+  "indexedFiles": 12,
+  "symbols": [
+    {
+      "kind": "fn",
+      "name": "HandlePacket",
+      "file": "src/network.go",
+      "start": 45,
+      "end": 78,
+      "lines": 34,
+      "signature": "func HandlePacket(conn NetConn, pkt Packet)"
+    }
+  ],
+  "warnings": []
+}
+```
+
 ### 2. Dereference an Exact Slice
-Fetch only the lines needed for the current edit:
+Fetch only the lines needed for the current edit (streamed in $O(K)$ RAM):
 
 ```bash
 go run main.go slice src/network.go 45 78
@@ -111,6 +136,13 @@ Locate references across files without reading full files:
 
 ```bash
 go run main.go trace HandlePacket src/
+```
+
+Output:
+```text
+--- [TRACE] Referencing 'HandlePacket' (1 occurrences) ---
+src/server.go:112 -> HandlePacket(c, p)
+--- [END TRACE] (Status: COMPLETE) ---
 ```
 
 ---

@@ -282,10 +282,10 @@ func parseGenericSymbols(path string) ([]Symbol, error) {
 }
 
 type IndexReport struct {
-	TotalFiles   int
-	IndexedFiles int
-	Symbols      []Symbol
-	Warnings     []string
+	TotalFiles   int      `json:"totalFiles"`
+	IndexedFiles int      `json:"indexedFiles"`
+	Symbols      []Symbol `json:"symbols"`
+	Warnings     []string `json:"warnings"`
 }
 
 func indexTarget(targetPath string) (*IndexReport, error) {
@@ -321,6 +321,8 @@ func indexTarget(targetPath string) (*IndexReport, error) {
 
 	report := &IndexReport{
 		TotalFiles: len(files),
+		Symbols:    []Symbol{},
+		Warnings:   []string{},
 	}
 
 	for _, f := range files {
@@ -371,7 +373,7 @@ func handleIndex(args []string) {
 	if *jsonOutput {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		enc.Encode(report.Symbols)
+		enc.Encode(report)
 		return
 	}
 
@@ -429,13 +431,17 @@ func handleSlice(args []string) {
 	}
 	defer file.Close()
 
-	var lines []string
+	// Streaming Slice: only accumulate target lines in memory (O(K) memory, where K = end-start+1)
+	var targetLines []string
+	lineNum := 0
 	reader := bufio.NewReader(file)
 	for {
 		line, err := reader.ReadString('\n')
 		if len(line) > 0 {
-			line = strings.TrimRight(line, "\r\n")
-			lines = append(lines, line)
+			lineNum++
+			if lineNum >= start && lineNum <= end {
+				targetLines = append(targetLines, strings.TrimRight(line, "\r\n"))
+			}
 		}
 		if err != nil {
 			if err == io.EOF {
@@ -446,7 +452,7 @@ func handleSlice(args []string) {
 		}
 	}
 
-	total := len(lines)
+	total := lineNum
 	if total == 0 {
 		fmt.Fprintf(os.Stderr, "Error: file %s is empty\n", target)
 		os.Exit(1)
@@ -464,10 +470,14 @@ func handleSlice(args []string) {
 	rel = filepath.ToSlash(rel)
 
 	fmt.Printf("--- [SLICE] %s (Lines %d..%d of %d) ---\n", rel, start, end, total)
-	for i := start - 1; i < end; i++ {
-		fmt.Printf("%4d | %s\n", i+1, lines[i])
+	for idx, l := range targetLines {
+		currLine := start + idx
+		if currLine > end {
+			break
+		}
+		fmt.Printf("%4d | %s\n", currLine, l)
 	}
-	fmt.Printf("--- [END SLICE] (%d lines) ---\n", end-start+1)
+	fmt.Printf("--- [END SLICE] (%d lines) ---\n", len(targetLines))
 }
 
 func handleTrace(args []string) {
@@ -499,10 +509,15 @@ func handleTrace(args []string) {
 		text string
 	}
 	var matches []match
+	var skippedFiles []string
 
 	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			if info != nil && info.IsDir() && excludeDirs[info.Name()] {
+		if err != nil {
+			skippedFiles = append(skippedFiles, fmt.Sprintf("%s (walk error: %v)", filepath.ToSlash(path), err))
+			return nil
+		}
+		if info.IsDir() {
+			if excludeDirs[info.Name()] {
 				return filepath.SkipDir
 			}
 			return nil
@@ -515,6 +530,7 @@ func handleTrace(args []string) {
 
 		file, err := os.Open(path)
 		if err != nil {
+			skippedFiles = append(skippedFiles, fmt.Sprintf("%s (open error: %v)", filepath.ToSlash(path), err))
 			return nil
 		}
 		defer file.Close()
@@ -553,7 +569,19 @@ func handleTrace(args []string) {
 	if len(matches) > *limit {
 		fmt.Printf("... and %d more matches truncated.\n", len(matches)-*limit)
 	}
-	fmt.Printf("--- [END TRACE] ---\n")
+
+	status := "COMPLETE"
+	if len(skippedFiles) > 0 {
+		status = fmt.Sprintf("PARTIAL (%d file(s) skipped)", len(skippedFiles))
+	}
+	fmt.Printf("--- [END TRACE] (Status: %s) ---\n", status)
+
+	if len(skippedFiles) > 0 {
+		fmt.Fprintf(os.Stderr, "\nTrace Warnings (%d file(s) unreadable or failed walk):\n", len(skippedFiles))
+		for _, sf := range skippedFiles {
+			fmt.Fprintf(os.Stderr, "  [!] %s\n", sf)
+		}
+	}
 }
 
 func main() {

@@ -18,7 +18,7 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 
 ## The Architectural Division of Labor
 
-* **The Go Engine (`pager`):** Kept strictly primitive and zero-bloat. Bounded context delivery to the LLM ($O(1)$ agent context), fast linear repository indexing ($O(N)$), line slicing, and symbol reference searching.
+* **The Go Engine (`pager`):** Kept strictly primitive and zero-bloat. Bounded context delivery to the LLM ($O(1)$ agent context, $O(K)$ streaming slice memory), fast linear repository indexing ($O(N)$), line slicing, and symbol reference searching.
 * **The AI Agent Layer:** Serves as the polymorphic presenter, analyst, and guardian. It renders human-friendly Markdown tables, validates language-specific syntax, enforces the "No Magic" provenance policy, manages the single living `TASK_CARD.md`, requests human approval on risky surgery, and outputs reproducible benchmark reports upon task completion.
 
 ---
@@ -31,7 +31,7 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 4. **Careful Chunking & Syntax Awareness:** The AI inspects syntax per language (`.go`, `.py`, `.rs`, `.ts`, `.c`), groups chunks with unhurried care, and never rushes.
 5. **No Magic (Variable Provenance Policy):** *"If evidence is insufficient, stop tracing. Unknown is better than assumed."*
 6. **Interactive Approval Gate:** Propose plans clearly on `TASK_CARD.md` and await human approval before executing non-trivial surgery.
-7. **3-Hit Circuit Breaker:** Stop after 3 consecutive failed verification attempts. Do not perform a fourth automated fix. Request human guidance.
+7. **3-Hit Circuit Breaker:** Stop after 3 consecutive failed verification attempts. Never perform a fourth automated fix without human approval.
 8. **Verifiable Benchmark Reporting:** Upon completing any task or refactor, output a structured Markdown benchmark comparing total file volume against actual paged consumption.
 
 ---
@@ -89,7 +89,7 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 - Currently Holding: <CALL.NO>
 - Scope / Boundary: <lines being touched>
 - Variable Evidence (No Magic):
-  - `<var_name>`: [VERIFIED | INFERRED | UNKNOWN] @ <source_file:line>
+  - `<var_name>`: [VERIFIED (SCHEMA) | VERIFIED (TEST FIXTURE) | INFERRED | UNKNOWN] @ <source_file:line>
 - Next Step: <exact planned action>
 ```
 
@@ -107,8 +107,9 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
    When encountering dynamic/loose types (Python, PHP, Lua, JS, C macros/globals) or unverified parameters:
    * **Depth 1 Default (Max Depth = 2):** Use `go run main.go trace <symbol>` to locate reference call sites. *Note: Trace is a fast regex reference search; always dereference matching lines with `slice` to confirm whether it is an actual caller or comment/log.* If wrapped in an adapter/helper, allow at most ONE additional hop (Depth 2).
    * **Inspect Tests / Fixtures:** Check unit test mocks or test fixtures for concrete input schemas.
-   * **Tri-State Classification (Recorded in Active Desk):**
-     * `VERIFIED` — Explicitly established by source code, schema, or test fixture.
+   * **Evidence Classification (Recorded in Active Desk):**
+     * `VERIFIED (SCHEMA / CONTRACT)` — Explicitly established by source code, DB schema/migration, or formal API contract.
+     * `VERIFIED (TEST FIXTURE)` — Confirmed within test mocks or fixtures only (note: production may pass unexercised fields).
      * `INFERRED` — Deduceable from local context, but unverified at root (treat with caution).
      * `UNKNOWN` — Source origin unknown (e.g. untyped dynamic dicts, raw external JSON).
    * **External I/O (Database / API Requests):**
@@ -150,7 +151,7 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
    * If in **Auto Mode**: proceed to the next item.
    * If in **Interactive Mode**: report progress to user.
 3. **🔴 3-Hit Circuit Breaker:**
-   * **Stop after 3 consecutive failed verification attempts. Do not perform a fourth automated fix.**
+   * **Stop after 3 consecutive failed verification attempts. Never perform a fourth automated fix without human approval.**
    * Run `go run main.go trace <symbol>` to collect caller breadcrumbs.
    * Freeze `TASK_CARD.md` with status `🔴 [CIRCUIT BREAKER TRIGGERED]`.
    * Report the exact failure symptoms, breadcrumbs, and 2-3 ranked hypotheses to the user.
@@ -185,7 +186,7 @@ Upon completing the session or all cards on the task list, output a structured B
 
 | Action | Allowed | Forbidden |
 | :--- | :--- | :--- |
-| **Tool Design** | Primitive Go engine (bounded context) | Bloating Go with heavy AST linters for every language |
+| **Tool Design** | Primitive Go engine (streaming $O(K)$ RAM) | Bloating Go with heavy AST linters for every language |
 | **Output Styling** | AI renders Markdown table for human | Raw unreadable terminal dumps |
 | **Dynamic Variables** | Trace caller (Depth $\le$ 2) or ask human | Guessing dictionary keys / DB schemas |
 | **Variable State** | Tri-State (`VERIFIED`, `INFERRED`, `UNKNOWN`) | Pretending assumptions are facts |
