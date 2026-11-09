@@ -47,21 +47,21 @@ Context Pager:
 ## 3. Features & Architecture
 
 ### The Architectural Division of Labor
-* **The Go Engine (`pager`):** Kept strictly primitive ($O(1)$ tool complexity). It only extracts symbols, slices exact line ranges, and traces references with near-zero latency (<5ms). No Markdown dependencies, no complex AST linters in binary.
-* **The AI Agent Layer:** Handles polymorphic presentation and governance. Renders human-friendly Markdown tables, validates syntax per language (`.go`, `.py`, `.rs`, `.ts`), manages the single living `TASK_CARD.md`, and requests approval on risky surgery.
+* **The Go Engine (`pager`):** Kept strictly primitive and zero-bloat. Bounded context delivery to the LLM ($O(1)$ agent context), fast linear repository indexing ($O(N)$), line slicing, and symbol reference searching. No Markdown dependencies, no heavy AST compiler stacks in binary.
+* **The AI Agent Layer:** Handles polymorphic presentation and governance. Renders human-friendly Markdown tables, validates syntax per language (`.go`, `.py`, `.rs`, `.ts`, `.c`), manages the single living `TASK_CARD.md`, and requests approval on risky surgery.
 
 ### Core Capabilities
-- **Demand-Paged Code Navigation:** Context size remains $O(1)$ regardless of codebase scale.
+- **Bounded Working Context:** Context size delivered to LLM remains constant ($O(1)$ working memory) regardless of repository scale ($O(N)$ linear disk scan).
 - **Pure OOP Boundary Enforcement:** Separates concerns into isolated parts that communicate strictly through well-defined contracts.
 - **Single Task Card (`TASK_CARD.md`):** One living card tracks the whole session using Library Call Numbers (`NET.CONN.01`), Shelf States (`IN SHELF`, `CHECKED OUT`, `SHELVED`), and human-in-the-loop approvals.
 - **"No Magic" Variable Provenance Policy:** Tri-state verification (`VERIFIED`, `INFERRED`, `UNKNOWN`) for dynamic/untyped languages (Python, PHP, Lua, C). Bounded backward tracing (Depth $\le$ 2) to immediate caller or test fixtures. Zero guessing of DB columns or API payloads: *"Unknown is better than assumed (ไม่รู้ก็ถาม)."*
 - **Interactive Approval Gate:** Proposes surgery plans clearly on the card before applying changes in supervised mode.
-- **3-Hit Circuit Breaker:** Halts immediately on 3 consecutive test failures to prevent agent churn and hallucinated guessing.
+- **3-Hit Circuit Breaker:** Stop after 3 consecutive failed verification attempts. Halts immediately to prevent agent churn and hallucinated guessing.
 - **Mandatory Re-Indexing:** Prevents line drift errors after file modifications.
-- **Polyglot Symbol Extraction:** AST-accurate indexing for Go; robust block detection for Python, Rust, JavaScript/TypeScript, and C/C++.
+- **Polyglot Symbol Extraction:** AST-accurate indexing for Go via standard library `go/parser`; lightweight zero-dependency heuristic block detection for Python, Rust, JavaScript/TypeScript, and C/C++.
 - **Blazing Fast Startup:** Native Go execution via `go run main.go` with minimal latency and automatic build caching.
-- **Deterministic 1-Based Slicing:** Extracts exact line ranges with clean boundary metadata for surgical agent diffs.
-- **Call-Chain Tracing:** Fast caller/callee reference discovery without loading full files.
+- **Deterministic 1-Based Slicing:** Extracts exact line ranges without 64KB token limits, with clean boundary metadata for surgical agent diffs.
+- **Fast Reference Search:** High-speed symbol reference discovery without loading full files. Agents verify call sites via `slice`.
 - **Agent Skill Ready:** Drop-in compatibility with Antigravity, Claude Code, Cursor, and OpenCode workflows via `SKILL.md`.
 
 ---
@@ -86,7 +86,7 @@ fn       HandlePacket                 L45-L78 (34L) func HandlePacket(conn NetCo
 struct   PlayerSession                L10-L40 (31L) type PlayerSession struct
          -> @ src/session.go:10
 --------------------------------------------------------------------------------
-Total mapped pointers: 2 symbols
+Index Summary: 2 symbols mapped across 2/2 files
 ```
 
 ### 2. Dereference an Exact Slice
@@ -106,8 +106,8 @@ Output:
 --- [END SLICE] (34 lines) ---
 ```
 
-### 3. Trace Reference Callers
-Follow call sites across files without reading full files:
+### 3. Trace Reference Call Sites
+Locate references across files without reading full files:
 
 ```bash
 go run main.go trace HandlePacket src/
@@ -126,7 +126,7 @@ Context Pager is designed to orchestrate alongside clean engineering disciplines
 3. **Stage 3: Minimal Diff (`ponytail`)**  
    Write the shortest working change. Eliminate unnecessary abstractions or speculative glue.
 4. **Stage 4: Hermetic Verification (`debug-mantra`)**  
-   Verify with deterministic tests (no sleep timers). Trace failures through pointer call sites. If tests fail >3 times, halt via Circuit Breaker.
+   Verify with deterministic tests (no sleep timers). Trace failures through pointer call sites. If verification fails 3 consecutive times, halt via Circuit Breaker.
 5. **Stage 5: Verifiable Benchmark (`context-pager`)**  
    Output an empirical Markdown benchmark report comparing total file volume against actual paged consumption, proving context savings objectively.
 
@@ -148,10 +148,5 @@ Context Pager does not operate in isolation; it forms the perceptual foundation 
 ## 7. Philosophy
 
 > *"The best code is the code never written.*  
-> *The best context is the context never read."*
-
----
-
-## License
-
-[MIT](LICENSE) © PsiGinger & Aun
+> *The best context is the context never read."*  
+> — PsiGinger & Aun

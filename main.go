@@ -8,12 +8,14 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Symbol represents an indexed code block pointer.
@@ -28,7 +30,7 @@ type Symbol struct {
 }
 
 var (
-	// Regex patterns for multi-language symbol extraction
+	// Regex patterns for multi-language symbol extraction (Heuristic)
 	patterns = []*regexp.Regexp{
 		// Python: def name(...), async def name(...), class Name(...)
 		regexp.MustCompile(`^\s*(?:async\s+)?(def)\s+([a-zA-Z0-9_]+)`),
@@ -42,6 +44,10 @@ var (
 		regexp.MustCompile(`^\s*(?:export\s+)?(?:async\s+)?(function)\s+([a-zA-Z0-9_]+)`),
 		regexp.MustCompile(`^\s*(?:export\s+)?(class|interface)\s+([a-zA-Z0-9_]+)`),
 		regexp.MustCompile(`^\s*(?:export\s+)?(?:const|let)\s+([a-zA-Z0-9_]+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>`),
+
+		// C/C++: class Name, struct Name, type funcName(...)
+		regexp.MustCompile(`^\s*(class|struct)\s+([a-zA-Z0-9_]+)\s*(?:;|:[^{]*)?\{?`),
+		regexp.MustCompile(`^\s*(?:[a-zA-Z_][a-zA-Z0-9_]*[\s*&]+)+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^;]*\)\s*(?:const)?\s*\{`),
 	}
 
 	excludeDirs = map[string]bool{
@@ -142,7 +148,7 @@ func parseGoFile(path string) ([]Symbol, error) {
 	return symbols, nil
 }
 
-func stripStringAndComments(s string) string {
+func stripStringAndComments(s string, ext string) string {
 	// Strip string literals and single line comments for reliable brace counting
 	inQuotes := false
 	var quoteChar rune
@@ -152,6 +158,17 @@ func stripStringAndComments(s string) string {
 	for i := 0; i < len(runes); i++ {
 		r := runes[i]
 		if !inQuotes {
+			// Special handling for Rust lifetimes: 'a, 'static, etc. are NOT quote strings
+			if ext == ".rs" && r == '\'' {
+				if i+1 < len(runes) && (unicode.IsLetter(runes[i+1]) || runes[i+1] == '_') {
+					// Check if this is a single character literal like 'a'
+					if !(i+2 < len(runes) && runes[i+2] == '\'') {
+						buf.WriteRune(r)
+						continue
+					}
+				}
+			}
+
 			if r == '"' || r == '`' || r == '\'' {
 				inQuotes = true
 				quoteChar = r
@@ -178,12 +195,19 @@ func parseGenericSymbols(path string) ([]Symbol, error) {
 	defer file.Close()
 
 	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
+	reader := bufio.NewReader(file)
+	for {
+		line, err := reader.ReadString('\n')
+		if len(line) > 0 {
+			line = strings.TrimRight(line, "\r\n")
+			lines = append(lines, line)
+		}
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
 	}
 
 	var symbols []Symbol
@@ -222,7 +246,7 @@ func parseGenericSymbols(path string) ([]Symbol, error) {
 					openBraces := 0
 					started := false
 					for j := i; j < len(lines); j++ {
-						clean := stripStringAndComments(lines[j])
+						clean := stripStringAndComments(lines[j], ext)
 						openBraces += strings.Count(clean, "{") - strings.Count(clean, "}")
 						if strings.Contains(clean, "{") {
 							started = true
@@ -257,7 +281,14 @@ func parseGenericSymbols(path string) ([]Symbol, error) {
 	return symbols, nil
 }
 
-func indexTarget(targetPath string) ([]Symbol, error) {
+type IndexReport struct {
+	TotalFiles   int
+	IndexedFiles int
+	Symbols      []Symbol
+	Warnings     []string
+}
+
+func indexTarget(targetPath string) (*IndexReport, error) {
 	fi, err := os.Stat(targetPath)
 	if err != nil {
 		return nil, err
@@ -288,29 +319,36 @@ func indexTarget(targetPath string) ([]Symbol, error) {
 		}
 	}
 
-	var allSymbols []Symbol
+	report := &IndexReport{
+		TotalFiles: len(files),
+	}
+
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f))
 		var syms []Symbol
-		var err error
+		var parseErr error
 		if ext == ".go" {
-			syms, err = parseGoFile(f)
+			syms, parseErr = parseGoFile(f)
 		} else {
-			syms, err = parseGenericSymbols(f)
+			syms, parseErr = parseGenericSymbols(f)
 		}
-		if err == nil {
-			allSymbols = append(allSymbols, syms...)
+
+		if parseErr != nil {
+			report.Warnings = append(report.Warnings, fmt.Sprintf("%s: %v", filepath.ToSlash(f), parseErr))
+		} else {
+			report.IndexedFiles++
+			report.Symbols = append(report.Symbols, syms...)
 		}
 	}
 
-	sort.Slice(allSymbols, func(i, j int) bool {
-		if allSymbols[i].File == allSymbols[j].File {
-			return allSymbols[i].Start < allSymbols[j].Start
+	sort.Slice(report.Symbols, func(i, j int) bool {
+		if report.Symbols[i].File == report.Symbols[j].File {
+			return report.Symbols[i].Start < report.Symbols[j].Start
 		}
-		return allSymbols[i].File < allSymbols[j].File
+		return report.Symbols[i].File < report.Symbols[j].File
 	})
 
-	return allSymbols, nil
+	return report, nil
 }
 
 func handleIndex(args []string) {
@@ -324,7 +362,7 @@ func handleIndex(args []string) {
 	}
 
 	target := fs.Arg(0)
-	symbols, err := indexTarget(target)
+	report, err := indexTarget(target)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -333,14 +371,14 @@ func handleIndex(args []string) {
 	if *jsonOutput {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		enc.Encode(symbols)
+		enc.Encode(report.Symbols)
 		return
 	}
 
 	cwd, _ := os.Getwd()
 	fmt.Printf("%-8s %-28s %-12s %s\n", "KIND", "SYMBOL", "LINES", "SIGNATURE / FILE")
 	fmt.Println(strings.Repeat("-", 80))
-	for _, s := range symbols {
+	for _, s := range report.Symbols {
 		loc := fmt.Sprintf("L%d-L%d (%dL)", s.Start, s.End, s.Lines)
 		rel, err := filepath.Rel(cwd, s.File)
 		if err != nil {
@@ -351,7 +389,14 @@ func handleIndex(args []string) {
 		fmt.Printf("         -> @ %s:%d\n", rel, s.Start)
 	}
 	fmt.Println(strings.Repeat("-", 80))
-	fmt.Printf("Total mapped pointers: %d symbols\n", len(symbols))
+	fmt.Printf("Index Summary: %d symbols mapped across %d/%d files\n", len(report.Symbols), report.IndexedFiles, report.TotalFiles)
+
+	if len(report.Warnings) > 0 {
+		fmt.Fprintf(os.Stderr, "\nWarnings (%d file(s) skipped or failed to parse):\n", len(report.Warnings))
+		for _, w := range report.Warnings {
+			fmt.Fprintf(os.Stderr, "  [!] %s\n", w)
+		}
+	}
 }
 
 func handleSlice(args []string) {
@@ -368,6 +413,15 @@ func handleSlice(args []string) {
 		os.Exit(1)
 	}
 
+	if start < 1 {
+		fmt.Fprintf(os.Stderr, "Error: start line must be >= 1 (got %d)\n", start)
+		os.Exit(1)
+	}
+	if start > end {
+		fmt.Fprintf(os.Stderr, "Error: start line (%d) cannot be greater than end line (%d)\n", start, end)
+		os.Exit(1)
+	}
+
 	file, err := os.Open(target)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: cannot open file %s: %v\n", target, err)
@@ -376,14 +430,30 @@ func handleSlice(args []string) {
 	defer file.Close()
 
 	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
+	reader := bufio.NewReader(file)
+	for {
+		line, err := reader.ReadString('\n')
+		if len(line) > 0 {
+			line = strings.TrimRight(line, "\r\n")
+			lines = append(lines, line)
+		}
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", target, err)
+			os.Exit(1)
+		}
 	}
 
 	total := len(lines)
-	if start < 1 {
-		start = 1
+	if total == 0 {
+		fmt.Fprintf(os.Stderr, "Error: file %s is empty\n", target)
+		os.Exit(1)
+	}
+	if start > total {
+		fmt.Fprintf(os.Stderr, "Error: start line (%d) exceeds total lines in file (%d)\n", start, total)
+		os.Exit(1)
 	}
 	if end > total {
 		end = total
@@ -450,17 +520,23 @@ func handleTrace(args []string) {
 		defer file.Close()
 
 		lineNum := 0
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			lineNum++
-			line := scanner.Text()
-			if re.MatchString(line) {
-				rel, _ := filepath.Rel(cwd, path)
-				matches = append(matches, match{
-					file: filepath.ToSlash(rel),
-					line: lineNum,
-					text: strings.TrimSpace(line),
-				})
+		reader := bufio.NewReader(file)
+		for {
+			line, err := reader.ReadString('\n')
+			if len(line) > 0 {
+				lineNum++
+				lineClean := strings.TrimRight(line, "\r\n")
+				if re.MatchString(lineClean) {
+					rel, _ := filepath.Rel(cwd, path)
+					matches = append(matches, match{
+						file: filepath.ToSlash(rel),
+						line: lineNum,
+						text: strings.TrimSpace(lineClean),
+					})
+				}
+			}
+			if err != nil {
+				break
 			}
 		}
 		return nil

@@ -2,7 +2,7 @@
 name: context-pager
 description: >
   Surgical on-demand code paging, OOP boundary refactoring, and single Task Card
-  orchestrator. Keeps Go tooling primitive (O(1) complexity) while delegating
+  orchestrator. Keeps Go tooling primitive (bounded LLM context) while delegating
   markdown presentation, language syntax validation, approval gating, and
   verifiable benchmark reporting to the AI agent layer. Enforces pure OOP
   separation, library check-out ledger (TASK_CARD.md), "No Magic" variable
@@ -18,20 +18,20 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 
 ## The Architectural Division of Labor
 
-* **The Go Engine (`pager`):** Remains a strictly primitive, zero-bloat Unix tool (O(1) tool complexity). It only indexes symbols, slices exact lines, and traces references.
+* **The Go Engine (`pager`):** Kept strictly primitive and zero-bloat. Bounded context delivery to the LLM ($O(1)$ agent context), fast linear repository indexing ($O(N)$), line slicing, and symbol reference searching.
 * **The AI Agent Layer:** Serves as the polymorphic presenter, analyst, and guardian. It renders human-friendly Markdown tables, validates language-specific syntax, enforces the "No Magic" provenance policy, manages the single living `TASK_CARD.md`, requests human approval on risky surgery, and outputs reproducible benchmark reports upon task completion.
 
 ---
 
 ## The Core Invariants
 
-1. **The best context is the context never read.** (Maintain constant $O(1)$ working context)
+1. **The best context is the context never read.** (Maintain constant bounded $O(1)$ working context)
 2. **Pure OOP Principle:** Strict boundary isolation (independent modules) + Explicit communication (caller-driven interfaces).
 3. **Single Task Card Ledger:** Exactly ONE living card (`TASK_CARD.md`) tracks all active work, call numbers, and shelf states.
 4. **Careful Chunking & Syntax Awareness:** The AI inspects syntax per language (`.go`, `.py`, `.rs`, `.ts`, `.c`), groups chunks with unhurried care, and never rushes.
 5. **No Magic (Variable Provenance Policy):** *"If evidence is insufficient, stop tracing. Unknown is better than assumed."*
 6. **Interactive Approval Gate:** Propose plans clearly on `TASK_CARD.md` and await human approval before executing non-trivial surgery.
-7. **3-Hit Circuit Breaker:** If tests or compilation fail > 3 consecutive runs, STOP immediately. Never guess or churn. Request human guidance.
+7. **3-Hit Circuit Breaker:** Stop after 3 consecutive failed verification attempts. Do not perform a fourth automated fix. Request human guidance.
 8. **Verifiable Benchmark Reporting:** Upon completing any task or refactor, output a structured Markdown benchmark comparing total file volume against actual paged consumption.
 
 ---
@@ -51,7 +51,7 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 [Stage 3: Minimal Diff & Approval Gate]    ➔ Propose minimal diff (/ponytail), ask approval if risky
      │
      ▼
-[Stage 4: Verify, Shelve & Circuit Breaker] ➔ 3x hermetic tests. Pass: Shelve 🟢. Fail > 3: HALT 🔴.
+[Stage 4: Verify, Shelve & Circuit Breaker] ➔ Hermetic tests. Pass: Shelve 🟢. 3 Failures: HALT 🔴.
      │
      ▼
 [Stage 5: Benchmark & Ledger Closure]      ➔ Output final Markdown benchmark report
@@ -83,7 +83,7 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 ## 📚 Book Catalog (Shelf Ledger)
 - ⚪ [IN SHELF] <CALL.NO> (<SymbolName>) - <brief role> @ <file:Lstart..Lend>
 - 🟡 [CHECKED OUT] <CALL.NO> (<SymbolName>) - Currently under surgery
-- 🟢 [SHELVED] <CALL.NO> (<SymbolName>) - Verified & 3x Tests Passed
+- 🟢 [SHELVED] <CALL.NO> (<SymbolName>) - Verified & Tests Passed
 
 ## 🎯 Active Borrowing Desk
 - Currently Holding: <CALL.NO>
@@ -101,11 +101,11 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
    Change status in `TASK_CARD.md` from `⚪ [IN SHELF]` to `🟡 [CHECKED OUT]`.
    Hold only one symbol at a time.
 2. **Language Syntax Awareness:**
-   * Acknowledge language rules (`.go` receiver methods, `.py` indentation/decorators, `.rs` borrow/trait rules, `.ts` types, `.c` pointers/macros).
+   * Acknowledge language rules (`.go` AST receiver methods, `.py` indentation/decorators, `.rs` borrow/lifetime rules, `.ts` types, `.c`/`.cpp` pointers/classes).
    * Ensure the chunk has clean, isolated boundaries before making changes.
 3. **The "No Magic" Variable Provenance Policy:**
    When encountering dynamic/loose types (Python, PHP, Lua, JS, C macros/globals) or unverified parameters:
-   * **Depth 1 Default (Max Depth = 2):** Use `go run main.go trace <symbol>` to inspect the immediate caller. If it is wrapped in an adapter/helper, allow at most ONE additional hop (Depth 2).
+   * **Depth 1 Default (Max Depth = 2):** Use `go run main.go trace <symbol>` to locate reference call sites. *Note: Trace is a fast regex reference search; always dereference matching lines with `slice` to confirm whether it is an actual caller or comment/log.* If wrapped in an adapter/helper, allow at most ONE additional hop (Depth 2).
    * **Inspect Tests / Fixtures:** Check unit test mocks or test fixtures for concrete input schemas.
    * **Tri-State Classification (Recorded in Active Desk):**
      * `VERIFIED` — Explicitly established by source code, schema, or test fixture.
@@ -139,23 +139,22 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 ## Stage 4: Verification, Shelve & Circuit Breaker
 
 1. **Hermetic Verification (`/engineering-rules`):**
-   * Run the test suite at least 3 times.
+   * Run the test suite hermetically.
    * Tests must NOT sleep or depend on wall-clock timing.
    * Compile with warnings as errors (`-Wall -Werror` for C, `mypy` for Python, `phpstan` for PHP).
 2. **Success & Re-Indexing (No Line Drift):**
    * Update `TASK_CARD.md`: mark item as `🟢 [SHELVED]`.
    * Clear the active variable evidence in `Active Borrowing Desk`.
    * **MANDATORY RE-INDEX:** Re-run `go run main.go index <file>` on the modified file to immediately refresh all line offsets, preventing line drift errors on subsequent steps.
-   * Run Git commit checkpoint immediately.
+   * Create Git commit checkpoint when authorized by user or when working tree is in a verified clean state.
    * If in **Auto Mode**: proceed to the next item.
    * If in **Interactive Mode**: report progress to user.
-3. **🔴 3-Hit Circuit Breaker (Fail > 3 Runs):**
-   * If a failure repeats for **3 consecutive attempts**:
-     1. **HALT EXECUTION IMMEDIATELY.** Do not attempt a 4th automated fix.
-     2. Run `go run main.go trace <symbol>` to collect caller breadcrumbs.
-     3. Freeze `TASK_CARD.md` with status `🔴 [CIRCUIT BREAKER TRIGGERED]`.
-     4. Report the exact failure symptoms, breadcrumbs, and 2-3 ranked hypotheses to the user.
-     5. Await explicit human review and approval before proceeding.
+3. **🔴 3-Hit Circuit Breaker:**
+   * **Stop after 3 consecutive failed verification attempts. Do not perform a fourth automated fix.**
+   * Run `go run main.go trace <symbol>` to collect caller breadcrumbs.
+   * Freeze `TASK_CARD.md` with status `🔴 [CIRCUIT BREAKER TRIGGERED]`.
+   * Report the exact failure symptoms, breadcrumbs, and 2-3 ranked hypotheses to the user.
+   * Await explicit human review and guidance before proceeding.
 
 ---
 
@@ -174,7 +173,7 @@ Upon completing the session or all cards on the task list, output a structured B
 | **Estimated Token Ingestion** | `~<paged_tokens>` tokens | `~<full_tokens>` tokens | **`~<token_saved>% tokens saved`** |
 | **Tool Invocations** | `<count>` calls (idx: `<N>`, slc: `<N>`, trc: `<N>`) | N/A | Deterministic execution |
 | **Variable Provenance** | `<N>` Verified, `0` Unknown | Assumed/Hallucinated | Zero Assumption |
-| **Hermetic Tests (3x)** | Passed (100%) | Flaky/Unchecked | Verified Correctness |
+| **Hermetic Tests** | Passed (100%) | Flaky/Unchecked | Verified Correctness |
 | **Net Code Diff** | `+<added> / -<removed>` lines | Full file rewrite | Minimal Diff |
 
 > **Key Takeaway:** Solved the objective with `<actual_lines_paged>` lines of working context instead of ingesting `<total_lines_in_files>` lines.
@@ -186,11 +185,11 @@ Upon completing the session or all cards on the task list, output a structured B
 
 | Action | Allowed | Forbidden |
 | :--- | :--- | :--- |
-| **Tool Design** | Keep Go engine simple ($O(1)$) | Bloating Go with Markdown/Linter dependencies |
+| **Tool Design** | Primitive Go engine (bounded context) | Bloating Go with heavy AST linters for every language |
 | **Output Styling** | AI renders Markdown table for human | Raw unreadable terminal dumps |
 | **Dynamic Variables** | Trace caller (Depth $\le$ 2) or ask human | Guessing dictionary keys / DB schemas |
 | **Variable State** | Tri-State (`VERIFIED`, `INFERRED`, `UNKNOWN`) | Pretending assumptions are facts |
 | **Post-Edit State** | Mandatory re-index to prevent line drift | Assuming old line numbers remain static |
 | **Risky Surgery** | Propose plan & ask for approval | Silent destructive edits in interactive mode |
-| **On Failure > 3** | Halt immediately & present breadcrumbs | Silent 4th/5th retry loops and random guessing |
+| **On Failure > 3** | Stop after 3 consecutive failed verification attempts | Silent 4th/5th retry loops and random guessing |
 | **Task Completion** | Output verifiable Markdown benchmark | Ending session without measured proof |
