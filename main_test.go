@@ -287,17 +287,20 @@ func TestReadSliceRealImplementation(t *testing.T) {
 		t.Errorf("Mismatch in clamped slice content: first=%s, last=%s", endBeyondLines[0], endBeyondLines[10])
 	}
 
-	// 3. Test exact CRLF and trailing space preservation
-	crlfContent := "Line with spaces   \r\nSecond line\t\n"
-	crlfLines, _, err := readSlice(strings.NewReader(crlfContent), 1, 2)
+	// 3. Test exact CRLF, leading indentation, and trailing space preservation
+	crlfContent := "    Line with leading and trailing spaces    \r\n\tSecond line with tabs\t\r\nThird clean line\n"
+	crlfLines, _, err := readSlice(strings.NewReader(crlfContent), 1, 3)
 	if err != nil {
 		t.Fatalf("readSlice on CRLF failed: %v", err)
 	}
-	if crlfLines[0] != "Line with spaces   " {
-		t.Errorf("Trailing whitespace was incorrectly trimmed: got %q", crlfLines[0])
+	if crlfLines[0] != "    Line with leading and trailing spaces    " {
+		t.Errorf("Leading/trailing spaces altered: got %q", crlfLines[0])
 	}
-	if crlfLines[1] != "Second line\t" {
-		t.Errorf("Trailing tab was incorrectly trimmed: got %q", crlfLines[1])
+	if crlfLines[1] != "\tSecond line with tabs\t" {
+		t.Errorf("Leading/trailing tabs altered: got %q", crlfLines[1])
+	}
+	if crlfLines[2] != "Third clean line" {
+		t.Errorf("Clean line altered: got %q", crlfLines[2])
 	}
 
 	// 4. Test boundary validation errors directly on readSlice
@@ -354,21 +357,33 @@ func TestReadSliceMidStreamReadError(t *testing.T) {
 	}
 }
 
-func BenchmarkReadSlice(b *testing.B) {
-	var sb strings.Builder
-	for i := 1; i <= 10000; i++ {
-		sb.WriteString("func BenchmarkTargetWorkerFunction() { int count = 1; }\n")
+func BenchmarkReadSliceScaling(b *testing.B) {
+	sizes := []struct {
+		name  string
+		count int
+	}{
+		{"1K_Lines", 1000},
+		{"10K_Lines", 10000},
+		{"100K_Lines", 100000},
 	}
-	payload := sb.String()
 
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		lines, total, err := readSlice(strings.NewReader(payload), 500, 530)
-		if err != nil || total != 10000 || len(lines) != 31 {
-			b.Fatalf("benchmark iteration failed: %v", err)
+	for _, s := range sizes {
+		var sb strings.Builder
+		for i := 1; i <= s.count; i++ {
+			sb.WriteString("func Worker() { int count = 1; }\n")
 		}
+		payload := sb.String()
+
+		b.Run(s.name, func(b *testing.B) {
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				lines, total, err := readSlice(strings.NewReader(payload), 500, 530)
+				if err != nil || total != s.count || len(lines) != 31 {
+					b.Fatalf("benchmark failed: %v", err)
+				}
+			}
+		})
 	}
 }
 
