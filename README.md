@@ -126,7 +126,9 @@ Context Pager is designed to orchestrate alongside clean engineering disciplines
 3. **Stage 3: Minimal Diff (`ponytail`)**  
    Write the shortest working change. Eliminate unnecessary abstractions or speculative glue.
 4. **Stage 4: Hermetic Verification (`debug-mantra`)**  
-   Verify with deterministic tests (no sleep timers). Trace failures through pointer call sites.
+   Verify with deterministic tests (no sleep timers). Trace failures through pointer call sites. If tests fail >3 times, halt via Circuit Breaker.
+5. **Stage 5: Verifiable Benchmark (`context-pager`)**  
+   Output an empirical Markdown benchmark report comparing total file volume against actual paged consumption, proving context savings objectively.
 
 ---
 

@@ -3,45 +3,46 @@ name: context-pager
 description: >
   Surgical on-demand code paging, OOP boundary refactoring, and single Task Card
   orchestrator. Keeps Go tooling primitive (O(1) complexity) while delegating
-  markdown presentation, language syntax validation, and approval gating to the
-  AI agent layer. Enforces pure OOP separation, library check-out ledger
-  (TASK_CARD.md), "No Magic" variable provenance tracking, and halts on 3 consecutive
-  test failures for human guidance.
+  markdown presentation, language syntax validation, approval gating, and
+  verifiable benchmark reporting to the AI agent layer. Enforces pure OOP
+  separation, library check-out ledger (TASK_CARD.md), "No Magic" variable
+  provenance tracking, and halts on 3 consecutive test failures for human guidance.
 argument-hint: "[target-path]"
 license: MIT
 ---
 
 # Context Pager
 
-A systems-native approach to AI-assisted coding and large-scale refactoring (>10k lines).
+A systems-native protocol for AI-assisted coding and large-scale refactoring (>10k lines).
 Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Library Card Catalogs.
 
 ## The Architectural Division of Labor
 
 * **The Go Engine (`pager`):** Remains a strictly primitive, zero-bloat Unix tool (O(1) tool complexity). It only indexes symbols, slices exact lines, and traces references.
-* **The AI Agent Layer:** Serves as the polymorphic presenter and guardian. It renders human-friendly Markdown tables, validates language-specific syntax, enforces the "No Magic" provenance policy, manages the single living `TASK_CARD.md`, and requests approval on risky surgery.
+* **The AI Agent Layer:** Serves as the polymorphic presenter, analyst, and guardian. It renders human-friendly Markdown tables, validates language-specific syntax, enforces the "No Magic" provenance policy, manages the single living `TASK_CARD.md`, requests human approval on risky surgery, and outputs reproducible benchmark reports upon task completion.
 
 ---
 
 ## The Core Invariants
 
-1. **The best context is the context never read.** (Keep working context $O(1)$)
-2. **Pure OOP Principle:** Clear boundary isolation (แยกส่วนให้ชัดเจน) + Explicit communication (คุยกันผ่านสัญญา/Interface).
+1. **The best context is the context never read.** (Maintain constant $O(1)$ working context)
+2. **Pure OOP Principle:** Strict boundary isolation (independent modules) + Explicit communication (caller-driven interfaces).
 3. **Single Task Card Ledger:** Exactly ONE living card (`TASK_CARD.md`) tracks all active work, call numbers, and shelf states.
-4. **Careful Chunking & Syntax Awareness:** The AI inspects syntax per language (`.go`, `.py`, `.rs`, `.ts`), groups chunks with unhurried care, and never rushes.
-5. **No Magic (Variable Provenance Policy):** *"If evidence is insufficient, stop tracing. Unknown is better than assumed (ไม่รู้ก็ถาม)."*
-6. **Interactive Approval Gate:** Propose plans clearly on `TASK_CARD.md` and await human approval before performing major surgery.
+4. **Careful Chunking & Syntax Awareness:** The AI inspects syntax per language (`.go`, `.py`, `.rs`, `.ts`, `.c`), groups chunks with unhurried care, and never rushes.
+5. **No Magic (Variable Provenance Policy):** *"If evidence is insufficient, stop tracing. Unknown is better than assumed."*
+6. **Interactive Approval Gate:** Propose plans clearly on `TASK_CARD.md` and await human approval before executing non-trivial surgery.
 7. **3-Hit Circuit Breaker:** If tests or compilation fail > 3 consecutive runs, STOP immediately. Never guess or churn. Request human guidance.
+8. **Verifiable Benchmark Reporting:** Upon completing any task or refactor, output a structured Markdown benchmark comparing total file volume against actual paged consumption.
 
 ---
 
-## The 4-Stage Refactoring Pipeline
+## The 5-Stage Refactoring Pipeline
 
 ```text
 [Task / Issue]
      │
      ▼
-[Stage 1: Catalog & Markdown Presentation] ➔ Run pager index, format beautiful MD table for human
+[Stage 1: Catalog & Markdown Presentation] ➔ Run pager index, format clean MD table for human
      │
      ▼
 [Stage 2: Check-Out & No-Magic Slicing]    ➔ Borrow 1 card, trace unverified types (Depth <= 2)
@@ -51,13 +52,16 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
      │
      ▼
 [Stage 4: Verify, Shelve & Circuit Breaker] ➔ 3x hermetic tests. Pass: Shelve 🟢. Fail > 3: HALT 🔴.
+     │
+     ▼
+[Stage 5: Benchmark & Ledger Closure]      ➔ Output final Markdown benchmark report
 ```
 
 ---
 
 ## Stage 1: Pointer Mapping & Markdown Presentation
 
-1. **NEVER sweep full files.** Strictly forbid reading entire files exceeding 80 lines.
+1. **NEVER sweep full files.** Strictly forbid reading entire files exceeding 80 lines into context.
 2. **Index the Target:** Run the pager tool to extract symbols, boundaries, and signatures:
    ```bash
    go run main.go index <target-file-or-dir>
@@ -103,14 +107,14 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
    When encountering dynamic/loose types (Python, PHP, Lua, JS, C macros/globals) or unverified parameters:
    * **Depth 1 Default (Max Depth = 2):** Use `go run main.go trace <symbol>` to inspect the immediate caller. If it is wrapped in an adapter/helper, allow at most ONE additional hop (Depth 2).
    * **Inspect Tests / Fixtures:** Check unit test mocks or test fixtures for concrete input schemas.
-   * **Tri-State Classification (บันทึกใน Active Desk):**
+   * **Tri-State Classification (Recorded in Active Desk):**
      * `VERIFIED` — Explicitly established by source code, schema, or test fixture.
      * `INFERRED` — Deduceable from local context, but unverified at root (treat with caution).
      * `UNKNOWN` — Source origin unknown (e.g. untyped dynamic dicts, raw external JSON).
    * **External I/O (Database / API Requests):**
      * *Case A (Schema Exists):* If a DB migration, SQL file, or API contract exists, trace to it as evidence.
-     * *Case B (No Schema):* **HALT IMMEDIATELY.** Classify as `UNKNOWN`. Send question to the user via the Approval Gate. Strictly forbid guessing database columns or API payload shapes!
-   * **Golden Rule:** *"If evidence is insufficient, stop tracing. Unknown is better than assumed (ไม่รู้ก็ถาม)."*
+     * *Case B (No Schema):* **HALT IMMEDIATELY.** Classify as `UNKNOWN`. Request human confirmation via the Approval Gate. Strictly forbid guessing database columns or API payload shapes!
+   * **Golden Rule:** *"If evidence is insufficient, stop tracing. Unknown is better than assumed."*
 4. **Dereference the Slice:**
    Fetch ONLY the exact lines belonging to the checked-out symbol:
    ```bash
@@ -126,7 +130,7 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 2. **Interactive Approval Gate:**
    * If in **Interactive Mode**, holding an `UNKNOWN` variable status, or performing non-trivial extraction (e.g. slicing a 600-line monolith):
      Present the exact plan, variable evidence, and proposed diff on `TASK_CARD.md`.
-     Ask: *"พี่แมวตรวจแผนนี้แล้ว Approve ให้ลุยเลยไหมคะ?"*
+     Ask: *"Please review the proposed refactoring plan and approve before proceeding."*
      Do NOT touch the disk until approval is granted.
    * If in **Auto Mode**: Proceed with minimal diff directly (unless an `UNKNOWN` variable triggers the gate).
 
@@ -155,6 +159,29 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 
 ---
 
+## Stage 5: Verifiable Benchmark Report
+
+Upon completing the session or all cards on the task list, output a structured Benchmark Report formatted in clean Markdown.
+
+### Report Template
+
+```markdown
+### 📊 Context Pager Benchmark Report
+
+| Metric | Measured Value | Baseline (Full Sweep) | Efficiency Gain |
+| :--- | :--- | :--- | :--- |
+| **Total Lines in Scope** | `<actual_lines_paged>` lines | `<total_lines_in_files>` lines | **`<reduction_percentage>% reduction`** |
+| **Estimated Token Ingestion** | `~<paged_tokens>` tokens | `~<full_tokens>` tokens | **`~<token_saved>% tokens saved`** |
+| **Tool Invocations** | `<count>` calls (idx: `<N>`, slc: `<N>`, trc: `<N>`) | N/A | Deterministic execution |
+| **Variable Provenance** | `<N>` Verified, `0` Unknown | Assumed/Hallucinated | Zero Assumption |
+| **Hermetic Tests (3x)** | Passed (100%) | Flaky/Unchecked | Verified Correctness |
+| **Net Code Diff** | `+<added> / -<removed>` lines | Full file rewrite | Minimal Diff |
+
+> **Key Takeaway:** Solved the objective with `<actual_lines_paged>` lines of working context instead of ingesting `<total_lines_in_files>` lines.
+```
+
+---
+
 ## Operational Summary
 
 | Action | Allowed | Forbidden |
@@ -166,3 +193,4 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 | **Post-Edit State** | Mandatory re-index to prevent line drift | Assuming old line numbers remain static |
 | **Risky Surgery** | Propose plan & ask for approval | Silent destructive edits in interactive mode |
 | **On Failure > 3** | Halt immediately & present breadcrumbs | Silent 4th/5th retry loops and random guessing |
+| **Task Completion** | Output verifiable Markdown benchmark | Ending session without measured proof |
