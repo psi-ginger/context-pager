@@ -252,7 +252,8 @@ func parseGenericSymbols(path string) ([]Symbol, error) {
 	for {
 		line, err := reader.ReadString('\n')
 		if len(line) > 0 {
-			line = strings.TrimRight(line, "\r\n")
+			line = strings.TrimSuffix(line, "\n")
+			line = strings.TrimSuffix(line, "\r")
 			lines = append(lines, line)
 		}
 		if err != nil {
@@ -476,7 +477,9 @@ func readSlice(r io.Reader, start, end int) ([]string, int, error) {
 		if len(line) > 0 {
 			lineNum++
 			if lineNum >= start && lineNum <= end {
-				targetLines = append(targetLines, strings.TrimRight(line, "\r\n"))
+				cleanLine := strings.TrimSuffix(line, "\n")
+				cleanLine = strings.TrimSuffix(cleanLine, "\r")
+				targetLines = append(targetLines, cleanLine)
 			}
 		}
 		if err != nil {
@@ -557,7 +560,8 @@ func traceFile(path string, re *regexp.Regexp, cwd string) ([]TraceMatch, error)
 		line, err := reader.ReadString('\n')
 		if len(line) > 0 {
 			lineNum++
-			lineClean := strings.TrimRight(line, "\r\n")
+			lineClean := strings.TrimSuffix(line, "\n")
+			lineClean = strings.TrimSuffix(lineClean, "\r")
 			if re.MatchString(lineClean) {
 				rel, _ := filepath.Rel(cwd, path)
 				matches = append(matches, TraceMatch{

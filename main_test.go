@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -249,7 +250,7 @@ func TestReadSliceRealImplementation(t *testing.T) {
 	// 1. Test standard slicing directly through the real readSlice function
 	var sb strings.Builder
 	for i := 1; i <= 100; i++ {
-		sb.WriteString("Line " + string(rune('0'+(i/10))) + string(rune('0'+(i%10))) + "\n")
+		sb.WriteString(fmt.Sprintf("Line %d\n", i))
 	}
 
 	content := sb.String()
@@ -271,7 +272,35 @@ func TestReadSliceRealImplementation(t *testing.T) {
 		t.Errorf("Expected last line to be 'Line 20', got: %s", lines[10])
 	}
 
-	// 2. Test boundary validation errors directly on readSlice
+	// 2. Test end boundary exceeding total lines (e.g. lines 90..200 on a 100-line file)
+	endBeyondLines, endTotal, err := readSlice(strings.NewReader(content), 90, 200)
+	if err != nil {
+		t.Fatalf("readSlice with end > total failed: %v", err)
+	}
+	if endTotal != 100 {
+		t.Errorf("Expected total 100, got %d", endTotal)
+	}
+	if len(endBeyondLines) != 11 { // 90 to 100 inclusive is 11 lines
+		t.Fatalf("Expected 11 lines when end > total, got %d", len(endBeyondLines))
+	}
+	if endBeyondLines[0] != "Line 90" || endBeyondLines[10] != "Line 100" {
+		t.Errorf("Mismatch in clamped slice content: first=%s, last=%s", endBeyondLines[0], endBeyondLines[10])
+	}
+
+	// 3. Test exact CRLF and trailing space preservation
+	crlfContent := "Line with spaces   \r\nSecond line\t\n"
+	crlfLines, _, err := readSlice(strings.NewReader(crlfContent), 1, 2)
+	if err != nil {
+		t.Fatalf("readSlice on CRLF failed: %v", err)
+	}
+	if crlfLines[0] != "Line with spaces   " {
+		t.Errorf("Trailing whitespace was incorrectly trimmed: got %q", crlfLines[0])
+	}
+	if crlfLines[1] != "Second line\t" {
+		t.Errorf("Trailing tab was incorrectly trimmed: got %q", crlfLines[1])
+	}
+
+	// 4. Test boundary validation errors directly on readSlice
 	_, _, err = readSlice(strings.NewReader(content), 0, 10)
 	if err == nil || !strings.Contains(err.Error(), "start line must be >= 1") {
 		t.Errorf("Expected start < 1 error, got: %v", err)
@@ -290,6 +319,56 @@ func TestReadSliceRealImplementation(t *testing.T) {
 	_, _, err = readSlice(strings.NewReader(""), 1, 5)
 	if err == nil || !strings.Contains(err.Error(), "file is empty") {
 		t.Errorf("Expected empty file error, got: %v", err)
+	}
+}
+
+// customErrorReader simulates an I/O read failure after emitting initial data.
+type customErrorReader struct {
+	data   string
+	read   bool
+	errVal error
+}
+
+func (r *customErrorReader) Read(p []byte) (n int, err error) {
+	if !r.read {
+		r.read = true
+		copy(p, r.data)
+		return len(r.data), nil
+	}
+	return 0, r.errVal
+}
+
+func TestReadSliceMidStreamReadError(t *testing.T) {
+	expectedErr := os.ErrPermission
+	mockReader := &customErrorReader{
+		data:   "Line 1\nLine 2\n",
+		errVal: expectedErr,
+	}
+
+	_, _, err := readSlice(mockReader, 1, 5)
+	if err == nil {
+		t.Fatalf("Expected read error, got nil")
+	}
+	if !strings.Contains(err.Error(), expectedErr.Error()) {
+		t.Errorf("Expected error to contain %v, got: %v", expectedErr, err)
+	}
+}
+
+func BenchmarkReadSlice(b *testing.B) {
+	var sb strings.Builder
+	for i := 1; i <= 10000; i++ {
+		sb.WriteString("func BenchmarkTargetWorkerFunction() { int count = 1; }\n")
+	}
+	payload := sb.String()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		lines, total, err := readSlice(strings.NewReader(payload), 500, 530)
+		if err != nil || total != 10000 || len(lines) != 31 {
+			b.Fatalf("benchmark iteration failed: %v", err)
+		}
 	}
 }
 
