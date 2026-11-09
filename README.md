@@ -54,6 +54,7 @@ Context Pager:
 - **Demand-Paged Code Navigation:** Context size remains $O(1)$ regardless of codebase scale.
 - **Pure OOP Boundary Enforcement:** Separates concerns into isolated parts that communicate strictly through well-defined contracts.
 - **Single Task Card (`TASK_CARD.md`):** One living card tracks the whole session using Library Call Numbers (`NET.CONN.01`), Shelf States (`IN SHELF`, `CHECKED OUT`, `SHELVED`), and human-in-the-loop approvals.
+- **"No Magic" Variable Provenance Policy:** Tri-state verification (`VERIFIED`, `INFERRED`, `UNKNOWN`) for dynamic/untyped languages (Python, PHP, Lua, C). Bounded backward tracing (Depth $\le$ 2) to immediate caller or test fixtures. Zero guessing of DB columns or API payloads: *"Unknown is better than assumed (ไม่รู้ก็ถาม)."*
 - **Interactive Approval Gate:** Proposes surgery plans clearly on the card before applying changes in supervised mode.
 - **3-Hit Circuit Breaker:** Halts immediately on 3 consecutive test failures to prevent agent churn and hallucinated guessing.
 - **Mandatory Re-Indexing:** Prevents line drift errors after file modifications.

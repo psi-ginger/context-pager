@@ -5,7 +5,8 @@ description: >
   orchestrator. Keeps Go tooling primitive (O(1) complexity) while delegating
   markdown presentation, language syntax validation, and approval gating to the
   AI agent layer. Enforces pure OOP separation, library check-out ledger
-  (TASK_CARD.md), and halts on 3 consecutive test failures for human guidance.
+  (TASK_CARD.md), "No Magic" variable provenance tracking, and halts on 3 consecutive
+  test failures for human guidance.
 argument-hint: "[target-path]"
 license: MIT
 ---
@@ -18,7 +19,7 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 ## The Architectural Division of Labor
 
 * **The Go Engine (`pager`):** Remains a strictly primitive, zero-bloat Unix tool (O(1) tool complexity). It only indexes symbols, slices exact lines, and traces references.
-* **The AI Agent Layer:** Serves as the polymorphic presenter and guardian. It renders human-friendly Markdown tables, validates language-specific syntax, manages the single living `TASK_CARD.md`, and requests approval on risky surgery.
+* **The AI Agent Layer:** Serves as the polymorphic presenter and guardian. It renders human-friendly Markdown tables, validates language-specific syntax, enforces the "No Magic" provenance policy, manages the single living `TASK_CARD.md`, and requests approval on risky surgery.
 
 ---
 
@@ -28,8 +29,9 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 2. **Pure OOP Principle:** Clear boundary isolation (แยกส่วนให้ชัดเจน) + Explicit communication (คุยกันผ่านสัญญา/Interface).
 3. **Single Task Card Ledger:** Exactly ONE living card (`TASK_CARD.md`) tracks all active work, call numbers, and shelf states.
 4. **Careful Chunking & Syntax Awareness:** The AI inspects syntax per language (`.go`, `.py`, `.rs`, `.ts`), groups chunks with unhurried care, and never rushes.
-5. **Interactive Approval Gate:** Propose plans clearly on `TASK_CARD.md` and await human approval before performing major surgery.
-6. **3-Hit Circuit Breaker:** If tests or compilation fail > 3 consecutive runs, STOP immediately. Never guess or churn. Request human guidance.
+5. **No Magic (Variable Provenance Policy):** *"If evidence is insufficient, stop tracing. Unknown is better than assumed (ไม่รู้ก็ถาม)."*
+6. **Interactive Approval Gate:** Propose plans clearly on `TASK_CARD.md` and await human approval before performing major surgery.
+7. **3-Hit Circuit Breaker:** If tests or compilation fail > 3 consecutive runs, STOP immediately. Never guess or churn. Request human guidance.
 
 ---
 
@@ -42,7 +44,7 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 [Stage 1: Catalog & Markdown Presentation] ➔ Run pager index, format beautiful MD table for human
      │
      ▼
-[Stage 2: Check-Out & Syntax-Aware Slice]  ➔ Borrow 1 card (Lending mode), inspect language syntax
+[Stage 2: Check-Out & No-Magic Slicing]    ➔ Borrow 1 card, trace unverified types (Depth <= 2)
      │
      ▼
 [Stage 3: Minimal Diff & Approval Gate]    ➔ Propose minimal diff (/ponytail), ask approval if risky
@@ -82,20 +84,34 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 ## 🎯 Active Borrowing Desk
 - Currently Holding: <CALL.NO>
 - Scope / Boundary: <lines being touched>
+- Variable Evidence (No Magic):
+  - `<var_name>`: [VERIFIED | INFERRED | UNKNOWN] @ <source_file:line>
 - Next Step: <exact planned action>
 ```
 
 ---
 
-## Stage 2: Check-Out & Syntax-Aware Slicing
+## Stage 2: Check-Out & No-Magic Slicing
 
 1. **Borrow Exactly One Piece (Check-Out):**
    Change status in `TASK_CARD.md` from `⚪ [IN SHELF]` to `🟡 [CHECKED OUT]`.
    Hold only one symbol at a time.
 2. **Language Syntax Awareness:**
-   * Before modifying, acknowledge the language rules (`.go` receiver methods, `.py` indentation/decorators, `.rs` borrow/trait rules, `.ts` types).
+   * Acknowledge language rules (`.go` receiver methods, `.py` indentation/decorators, `.rs` borrow/trait rules, `.ts` types, `.c` pointers/macros).
    * Ensure the chunk has clean, isolated boundaries before making changes.
-3. **Dereference the Slice:**
+3. **The "No Magic" Variable Provenance Policy:**
+   When encountering dynamic/loose types (Python, PHP, Lua, JS, C macros/globals) or unverified parameters:
+   * **Depth 1 Default (Max Depth = 2):** Use `go run main.go trace <symbol>` to inspect the immediate caller. If it is wrapped in an adapter/helper, allow at most ONE additional hop (Depth 2).
+   * **Inspect Tests / Fixtures:** Check unit test mocks or test fixtures for concrete input schemas.
+   * **Tri-State Classification (บันทึกใน Active Desk):**
+     * `VERIFIED` — Explicitly established by source code, schema, or test fixture.
+     * `INFERRED` — Deduceable from local context, but unverified at root (treat with caution).
+     * `UNKNOWN` — Source origin unknown (e.g. untyped dynamic dicts, raw external JSON).
+   * **External I/O (Database / API Requests):**
+     * *Case A (Schema Exists):* If a DB migration, SQL file, or API contract exists, trace to it as evidence.
+     * *Case B (No Schema):* **HALT IMMEDIATELY.** Classify as `UNKNOWN`. Send question to the user via the Approval Gate. Strictly forbid guessing database columns or API payload shapes!
+   * **Golden Rule:** *"If evidence is insufficient, stop tracing. Unknown is better than assumed (ไม่รู้ก็ถาม)."*
+4. **Dereference the Slice:**
    Fetch ONLY the exact lines belonging to the checked-out symbol:
    ```bash
    go run main.go slice <path> <start_line> <end_line>
@@ -108,11 +124,11 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 1. **Apply Senior Dev Laziness (`/ponytail`):**
    The shortest working diff wins. Never add speculative abstraction or boilerplate nobody asked for.
 2. **Interactive Approval Gate:**
-   * If in **Interactive Mode** or performing non-trivial extraction (e.g. slicing a 600-line monolith):
-     Present the exact plan and proposed diff in chat / on `TASK_CARD.md`.
+   * If in **Interactive Mode**, holding an `UNKNOWN` variable status, or performing non-trivial extraction (e.g. slicing a 600-line monolith):
+     Present the exact plan, variable evidence, and proposed diff on `TASK_CARD.md`.
      Ask: *"พี่แมวตรวจแผนนี้แล้ว Approve ให้ลุยเลยไหมคะ?"*
      Do NOT touch the disk until approval is granted.
-   * If in **Auto Mode**: Proceed with minimal diff directly.
+   * If in **Auto Mode**: Proceed with minimal diff directly (unless an `UNKNOWN` variable triggers the gate).
 
 ---
 
@@ -121,9 +137,10 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 1. **Hermetic Verification (`/engineering-rules`):**
    * Run the test suite at least 3 times.
    * Tests must NOT sleep or depend on wall-clock timing.
-   * Compile with warnings as errors.
+   * Compile with warnings as errors (`-Wall -Werror` for C, `mypy` for Python, `phpstan` for PHP).
 2. **Success & Re-Indexing (No Line Drift):**
    * Update `TASK_CARD.md`: mark item as `🟢 [SHELVED]`.
+   * Clear the active variable evidence in `Active Borrowing Desk`.
    * **MANDATORY RE-INDEX:** Re-run `go run main.go index <file>` on the modified file to immediately refresh all line offsets, preventing line drift errors on subsequent steps.
    * Run Git commit checkpoint immediately.
    * If in **Auto Mode**: proceed to the next item.
@@ -144,7 +161,8 @@ Enforces **Demand-Paged Code Navigation** inspired by OS Virtual Memory and Libr
 | :--- | :--- | :--- |
 | **Tool Design** | Keep Go engine simple ($O(1)$) | Bloating Go with Markdown/Linter dependencies |
 | **Output Styling** | AI renders Markdown table for human | Raw unreadable terminal dumps |
-| **Language Handling** | AI validates syntax rules per extension | Blind text replacement without language context |
+| **Dynamic Variables** | Trace caller (Depth $\le$ 2) or ask human | Guessing dictionary keys / DB schemas |
+| **Variable State** | Tri-State (`VERIFIED`, `INFERRED`, `UNKNOWN`) | Pretending assumptions are facts |
 | **Post-Edit State** | Mandatory re-index to prevent line drift | Assuming old line numbers remain static |
 | **Risky Surgery** | Propose plan & ask for approval | Silent destructive edits in interactive mode |
 | **On Failure > 3** | Halt immediately & present breadcrumbs | Silent 4th/5th retry loops and random guessing |
